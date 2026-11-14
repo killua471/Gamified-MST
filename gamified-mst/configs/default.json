@@ -1,0 +1,69 @@
+{
+  "clientName": "default",
+  "questions": [
+    {
+      "id": "experience",
+      "label": "Rate your experience on the {{testVersion}} Test: Scale of 1 to 10, where 1 is \"Very Frustrating\" and 10 is \"Very Enjoyable.\"",
+      "type": "rating",
+      "min": 1,
+      "max": 10,
+      "placeholder": "Enter a number from 1 to 10",
+      "required": true
+    },
+    {
+      "id": "location",
+      "label": "Where were you when you took the {{testVersion}} Test? (choose one)",
+      "type": "single-select",
+      "options": [
+        "Home",
+        "Work",
+        "Someone else's home",
+        "Public place indoors",
+        "Public place outdoors",
+        "Transportation",
+        "None of the Above"
+      ],
+      "required": true
+    },
+    {
+      "id": "performance",
+      "label": "Please rate your performance on the {{testVersion}} Test today (0-10)",
+      "type": "rating",
+      "min": 0,
+      "max": 10,
+      "placeholder": "Enter a number from 0 to 10",
+      "required": true
+    },
+    {
+      "id": "interferences",
+      "label": "Did any of the following interfere with your performance on the {{testVersion}} Test today? (select all that apply)",
+      "type": "multi-select",
+      "options": [
+        "Device not responding to taps",
+        "Difficulty loading images",
+        "Website freezing or crashing",
+        "Difficulty seeing the images or text",
+        "Device interruption (message, notification, etc.)",
+        "Environmental interruptions (fire alarm, family member talking, etc.)",
+        "Other technological distractions",
+        "None of the Above"
+      ],
+      "noneOption": "None of the Above",
+      "required": true
+    },
+    {
+      "id": "experiences",
+      "label": "Did you experience any of the following on the {{testVersion}} Test today? (select all that apply)",
+      "type": "multi-select",
+      "options": [
+        "Fatigue",
+        "Pain",
+        "Nervousness",
+        "Other physical or emotional experiences",
+        "None of the Above"
+      ],
+      "noneOption": "None of the Above",
+      "required": true
+    }
+  ]
+}

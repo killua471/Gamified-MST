@@ -1,0 +1,12 @@
+{
+  "clientName": "simple",
+  "questions": [
+    {
+      "id": "enjoy_app",
+      "label": "Do you enjoy using this app?",
+      "type": "single-select",
+      "options": ["Yes", "No"],
+      "required": true
+    }
+  ]
+}

@@ -1,19 +1,10 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState, useEffect } from "react";
-import { useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { getClientConfig, Question } from "@/app/lib/clientConfig";
 
-/* 
-
-TODO
-- connect to backend:
-- add metric post to questionnairepage
-- question: how does metric posting work? can you just post anything to /metrics and it works automatically?
-- answer: must match the exact user_id and session_id used during the game trials
-- just try it
-
-*/
+const config = getClientConfig();
 
 const TEST_VERSION = new Map([
     ["omst", "OMST"],
@@ -21,52 +12,18 @@ const TEST_VERSION = new Map([
     ["gamified-mst", "Gamified MST"],
 ]);
 
-const LOCATION_OPTIONS = [
-    "Home",
-    "Work",
-    "Someone else's home",
-    "Public place indoors",
-    "Public place outdoors",
-    "Transportation",
-    "None of the Above",
-];
+function interpolateLabel(label: string, testVersion: string): string {
+    return label.replace(/\{\{testVersion\}\}/g, testVersion);
+}
 
-const INTERFERENCE_OPTIONS = [
-    "Device not responding to taps",
-    "Difficulty loading images",
-    "Website freezing or crashing",
-    "Difficulty seeing the images or text",
-    "Device interruption (message, notification, etc.)",
-    "Environmental interruptions (fire alarm, family member talking, etc.)",
-    "Other technological distractions",
-    "None of the Above",
-];
-
-const EXPERIENCE_OPTIONS = [
-    "Fatigue",
-    "Pain",
-    "Nervousness",
-    "Other physical or emotional experiences",
-    "None of the Above",
-];
-
-const NONE_OF_THE_ABOVE = "None of the Above";
-
-// Default test values — valid answers for every required question
-const TEST_DEFAULTS = {
-    experience: "8",
-    location: "Home",
-    performance: "7",
-    interferences: [NONE_OF_THE_ABOVE],
-    experiences: [NONE_OF_THE_ABOVE],
-};
-
-function toggleMultiSelect(current: string[], option: string): string[] {
+function toggleMultiSelect(current: string[], option: string, noneOption?: string): string[] {
     const isSelected = current.includes(option);
-    if (option === NONE_OF_THE_ABOVE) {
-        return isSelected ? [] : [NONE_OF_THE_ABOVE];
+    if (noneOption && option === noneOption) {
+        return isSelected ? [] : [noneOption];
     }
-    const withoutNone = current.filter((item) => item !== NONE_OF_THE_ABOVE);
+    const withoutNone = noneOption
+        ? current.filter((item) => item !== noneOption)
+        : current;
     return isSelected
         ? withoutNone.filter((item) => item !== option)
         : [...withoutNone, option];
@@ -76,6 +33,24 @@ function isWholeNumberInRange(value: string, min: number, max: number) {
     if (value.trim() === "") return false;
     const parsed = Number(value);
     return Number.isInteger(parsed) && parsed >= min && parsed <= max;
+}
+
+function isAnswerValid(question: Question, answer: string | string[]): boolean {
+    if (!question.required) return true;
+    switch (question.type) {
+        case "rating":
+            return isWholeNumberInRange(
+                answer as string,
+                question.min ?? 0,
+                question.max ?? 10,
+            );
+        case "single-select":
+            return Boolean(answer);
+        case "multi-select":
+            return Array.isArray(answer) && answer.length > 0;
+        default:
+            return false;
+    }
 }
 
 export default function QuestionnairePage() {
@@ -88,20 +63,18 @@ export default function QuestionnairePage() {
     const [sessionID, setSessionID] = useState("");
     const [studyID, setStudyID] = useState("");
 
-    const [experience, setExperience] = useState("");
-    const [location, setLocation] = useState("");
-    const [performance, setPerformance] = useState("");
-    const [interferences, setInterferences] = useState<string[]>([]);
-    const [experiences, setExperiences] = useState<string[]>([]);
+    // Dynamic answers state: keyed by question id
+    const [answers, setAnswers] = useState<Record<string, string | string[]>>(() => {
+        const initial: Record<string, string | string[]> = {};
+        for (const q of config.questions) {
+            initial[q.id] = q.type === "multi-select" ? [] : "";
+        }
+        return initial;
+    });
 
-    const isExperienceValid = isWholeNumberInRange(experience, 1, 10);
-    const isPerformanceValid = isWholeNumberInRange(performance, 0, 10);
-    const canContinue =
-        isExperienceValid &&
-        Boolean(location) &&
-        isPerformanceValid &&
-        interferences.length > 0 &&
-        experiences.length > 0;
+    const canContinue = config.questions.every((q) =>
+        isAnswerValid(q, answers[q.id]),
+    );
 
     useEffect(() => {
         setTestVersion(searchParams.get("route") || "");
@@ -110,24 +83,10 @@ export default function QuestionnairePage() {
         setStudyID(searchParams.get("STUDY_ID") || "");
     }, []);
 
-    const handleContinue = async () => {
-        if (!canContinue) return;
-
-        // In test mode, IDs are already auto-generated; skip the Prolific param guard
-        if (!prolificPID || !sessionID) {
-            alert(
-                "Missing required Prolific parameters (PROLIFIC_PID and SESSION_ID)",
-            );
-            return;
-        }
-
-        saveSurveyData();
-
-        const prolificComplete =
-            process.env.NEXT_PUBLIC_PROLIFIC_COMPLETE_STUDY ||
-            "https://app.prolific.com/submissions/complete";
-        window.location.href = prolificComplete;
+    const setAnswer = (id: string, value: string | string[]) => {
+        setAnswers((prev) => ({ ...prev, [id]: value }));
     };
+
     const saveSurveyData = async () => {
         const AWS_API_GATEWAY = process.env.NEXT_PUBLIC_AWS_METRICS_API;
 
@@ -137,18 +96,18 @@ export default function QuestionnairePage() {
         }
 
         try {
-            const payload = {
-                // Must match the exact user_id and session_id used during the game trials
-                user_id: prolificPID,        // Extracted from URL search params (PROLIFIC_PID)
-                session_id: sessionID,       // Extracted from URL search params (SESSION_ID)
+            const payload: Record<string, unknown> = {
+                user_id: prolificPID,
+                session_id: sessionID,
                 study_id: studyID,
-                session_completed: true,     // Marks this session as fully completed
-                experience_quality: Number(experience),
-                test_location: location,
-                performance_self_rating: Number(performance),
-                performance_interferences: interferences, // Array of selected interferences
-                negative_symptoms: experiences,           // Array of selected experiences
+                session_completed: true,
+                client_id: config.clientName,
             };
+
+            // Add all answers to payload
+            for (const q of config.questions) {
+                payload[q.id] = answers[q.id];
+            }
 
             console.log("Sending questionnaire metrics payload:", payload);
 
@@ -159,13 +118,33 @@ export default function QuestionnairePage() {
             });
 
             if (!response.ok) {
-                throw new Error(`Questionnaire metrics save failed: ${response.status}`);
+                throw new Error(
+                    `Questionnaire metrics save failed: ${response.status}`,
+                );
             }
 
             console.log("Questionnaire metrics saved successfully!");
         } catch (e) {
             console.error("Failed to save survey data:", e);
         }
+    };
+
+    const handleContinue = async () => {
+        if (!canContinue) return;
+
+        if (!prolificPID || !sessionID) {
+            alert(
+                "Missing required Prolific parameters (PROLIFIC_PID and SESSION_ID)",
+            );
+            return;
+        }
+
+        await saveSurveyData();
+
+        const prolificComplete =
+            process.env.NEXT_PUBLIC_PROLIFIC_COMPLETE_STUDY ||
+            "https://app.prolific.com/submissions/complete";
+        window.location.href = prolificComplete;
     };
 
     // Allow Enter key to continue when all required fields are filled
@@ -189,16 +168,126 @@ export default function QuestionnairePage() {
         fontWeight: "700",
         fontSize: "18px",
     };
-    const radioContainerStyle = {
+    const containerStyle = {
         marginLeft: "20px",
         marginBottom: "15px",
         textAlign: "left" as const,
     };
-    const radioLabelStyle = {
+    const optionLabelStyle = {
         marginLeft: "10px",
         fontSize: "16px",
         fontWeight: "400",
     };
+
+    const renderQuestion = (question: Question) => {
+        const label = interpolateLabel(question.label, testVersionTitle);
+        const answer = answers[question.id];
+
+        switch (question.type) {
+            case "rating": {
+                const value = answer as string;
+                const valid = isWholeNumberInRange(
+                    value,
+                    question.min ?? 0,
+                    question.max ?? 10,
+                );
+                return (
+                    <div key={question.id} style={containerStyle}>
+                        <label style={labelStyle}>{label}</label>
+                        <input
+                            type="number"
+                            min={question.min}
+                            max={question.max}
+                            value={value}
+                            onChange={(e) =>
+                                setAnswer(question.id, e.target.value)
+                            }
+                            placeholder={question.placeholder}
+                            style={{
+                                width: "100%",
+                                padding: "12px",
+                                borderRadius: "4px",
+                                border: "1px solid #ccc",
+                                fontSize: "16px",
+                            }}
+                        />
+                        {!valid && value !== "" && (
+                            <div style={{ color: "#b00", marginTop: 8 }}>
+                                Enter a whole number from {question.min} to{" "}
+                                {question.max}.
+                            </div>
+                        )}
+                    </div>
+                );
+            }
+
+            case "single-select":
+                return (
+                    <div key={question.id} style={containerStyle}>
+                        <label style={labelStyle}>{label}</label>
+                        {question.options?.map((option) => (
+                            <label
+                                key={option}
+                                style={{ display: "block", cursor: "pointer" }}
+                            >
+                                <input
+                                    type="radio"
+                                    name={question.id}
+                                    value={option}
+                                    checked={answer === option}
+                                    onChange={(e) =>
+                                        setAnswer(question.id, e.target.value)
+                                    }
+                                />
+                                <span style={optionLabelStyle}>{option}</span>
+                            </label>
+                        ))}
+                    </div>
+                );
+
+            case "multi-select": {
+                const selected = answer as string[];
+                return (
+                    <div key={question.id} style={containerStyle}>
+                        <label style={labelStyle}>{label}</label>
+                        {question.options?.map((option) => (
+                            <label
+                                key={option}
+                                style={{ display: "block", cursor: "pointer" }}
+                            >
+                                <input
+                                    type="checkbox"
+                                    name={question.id}
+                                    value={option}
+                                    checked={selected.includes(option)}
+                                    onChange={() =>
+                                        setAnswer(
+                                            question.id,
+                                            toggleMultiSelect(
+                                                selected,
+                                                option,
+                                                question.noneOption,
+                                            ),
+                                        )
+                                    }
+                                />
+                                <span style={optionLabelStyle}>{option}</span>
+                            </label>
+                        ))}
+                    </div>
+                );
+            }
+        }
+    };
+
+    // Build validation summary
+    const missingFields = config.questions
+        .filter((q) => q.required && !isAnswerValid(q, answers[q.id]))
+        .map((q) => {
+            if (q.type === "rating")
+                return `${q.id} rating (${q.min}–${q.max}) required`;
+            return `${q.id} required`;
+        });
 
     return (
         <div
@@ -231,142 +320,9 @@ export default function QuestionnairePage() {
                     </h1>
                 </div>
 
-                {/* EXPERIENCE */}
-                <div style={radioContainerStyle}>
-                    <label style={labelStyle}>
-                        Rate your experience on the {testVersionTitle} Test:
-                        Scale of 1 to 10, where 1 is “Very Frustrating” and 10
-                        is “Very Enjoyable.”
-                    </label>
-                    <input
-                        type="number"
-                        min={1}
-                        max={10}
-                        value={experience}
-                        onChange={(e) => setExperience(e.target.value)}
-                        placeholder="Enter a number from 1 to 10"
-                        style={{
-                            width: "100%",
-                            padding: "12px",
-                            borderRadius: "4px",
-                            border: "1px solid #ccc",
-                            fontSize: "16px",
-                        }}
-                    />
-                    {!isExperienceValid && experience !== "" && (
-                        <div style={{ color: "#b00", marginTop: 8 }}>
-                            Enter a whole number from 1 to 10.
-                        </div>
-                    )}
-                </div>
+                {config.questions.map(renderQuestion)}
 
-                {/* LOCATION */}
-                <div style={radioContainerStyle}>
-                    <label style={labelStyle}>
-                        Where were you when you took the {testVersionTitle}{" "}
-                        Test? (choose one)
-                    </label>
-                    {LOCATION_OPTIONS.map((option) => (
-                        <label
-                            key={option}
-                            style={{ display: "block", cursor: "pointer" }}
-                        >
-                            <input
-                                type="radio"
-                                name="location"
-                                value={option}
-                                checked={location === option}
-                                onChange={(e) => setLocation(e.target.value)}
-                            />
-                            <span style={radioLabelStyle}>{option}</span>
-                        </label>
-                    ))}
-                </div>
-
-                {/* PERFORMANCE */}
-                <div style={radioContainerStyle}>
-                    <label style={labelStyle}>
-                        Please rate your performance on the {testVersionTitle}{" "}
-                        Test today (0-10)
-                    </label>
-                    <input
-                        type="number"
-                        min={0}
-                        max={10}
-                        value={performance}
-                        onChange={(e) => setPerformance(e.target.value)}
-                        placeholder="Enter a number from 0 to 10"
-                        style={{
-                            width: "100%",
-                            padding: "12px",
-                            borderRadius: "4px",
-                            border: "1px solid #ccc",
-                            fontSize: "16px",
-                        }}
-                    />
-                    {!isPerformanceValid && performance !== "" && (
-                        <div style={{ color: "#b00", marginTop: 8 }}>
-                            Enter a whole number from 0 to 10.
-                        </div>
-                    )}
-                </div>
-
-                {/* INTERFERENCE */}
-                <div style={radioContainerStyle}>
-                    <label style={labelStyle}>
-                        Did any of the following interfere with your performance
-                        on the {testVersionTitle} Test today? (select all that
-                        apply)
-                    </label>
-                    {INTERFERENCE_OPTIONS.map((option) => (
-                        <label
-                            key={option}
-                            style={{ display: "block", cursor: "pointer" }}
-                        >
-                            <input
-                                type="checkbox"
-                                name="interference"
-                                value={option}
-                                checked={interferences.includes(option)}
-                                onChange={() =>
-                                    setInterferences((current) =>
-                                        toggleMultiSelect(current, option),
-                                    )
-                                }
-                            />
-                            <span style={radioLabelStyle}>{option}</span>
-                        </label>
-                    ))}
-                </div>
-
-                {/* EXPERIENCES */}
-                <div style={radioContainerStyle}>
-                    <label style={labelStyle}>
-                        Did you experience any of the following on the{" "}
-                        {testVersionTitle} Test today? (select all that apply)
-                    </label>
-                    {EXPERIENCE_OPTIONS.map((option) => (
-                        <label
-                            key={option}
-                            style={{ display: "block", cursor: "pointer" }}
-                        >
-                            <input
-                                type="checkbox"
-                                name="experiences"
-                                value={option}
-                                checked={experiences.includes(option)}
-                                onChange={() =>
-                                    setExperiences((current) =>
-                                        toggleMultiSelect(current, option),
-                                    )
-                                }
-                            />
-                            <span style={radioLabelStyle}>{option}</span>
-                        </label>
-                    ))}
-                </div>
-
-                {/* Fixed footer button to ensure visibility on small screens */}
+                {/* Fixed footer button */}
                 <div
                     style={{
                         position: "fixed",
@@ -391,17 +347,7 @@ export default function QuestionnairePage() {
                         }}
                     >
                         <div style={{ fontSize: 14, color: "#555" }}>
-                            {isExperienceValid
-                                ? ""
-                                : "Experience rating (1–10) required • "}
-                            {location ? "" : "Location required • "}
-                            {isPerformanceValid
-                                ? ""
-                                : "Performance rating (0–10) required • "}
-                            {interferences.length
-                                ? ""
-                                : "Interference required • "}
-                            {experiences.length ? "" : "Experiences required"}
+                            {missingFields.join(" • ")}
                         </div>
                         <button
                             onClick={handleContinue}
@@ -409,7 +355,9 @@ export default function QuestionnairePage() {
                             style={{
                                 padding: "10px 18px",
                                 fontSize: "16px",
-                                cursor: canContinue ? "pointer" : "not-allowed",
+                                cursor: canContinue
+                                    ? "pointer"
+                                    : "not-allowed",
                                 backgroundColor: canContinue
                                     ? "#0366d6"
                                     : "#e9ecef",
@@ -427,5 +375,5 @@ export default function QuestionnairePage() {
                 </div>
             </div>
         </div>
-    );  
+    );
 }
