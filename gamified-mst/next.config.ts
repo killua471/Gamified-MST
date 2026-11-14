@@ -1,8 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: 'export',      // Required for GitHub Pages
-  trailingSlash: true,   // Changes /task to /task/index.html so links don't break
+  trailingSlash: true,   // Preserve trailing-slash URLs from previous GitHub Pages setup
 };
 
 export default nextConfig;
