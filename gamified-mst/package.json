@@ -16,7 +16,7 @@
     "@jspsych/plugin-preload": "^2.1.0",
     "jquery": "^3.7.1",
     "jspsych": "^7.3.4",
-    "next": "16.0.4",
+    "next": "^16.4.6",
     "react": "19.2.0",
     "react-dom": "19.2.0"
   },
@@ -28,7 +28,7 @@
     "@types/react-dom": "^19",
     "baseline-browser-mapping": "^2.10.7",
     "eslint": "^9",
-    "eslint-config-next": "16.0.4",
+    "eslint-config-next": "^16.4.6",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
