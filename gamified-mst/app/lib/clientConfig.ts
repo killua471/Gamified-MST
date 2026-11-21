@@ -8,13 +8,10 @@ export interface Question {
   label: string;
   type: QuestionType;
   required: boolean;
-  // For rating type
   min?: number;
   max?: number;
   placeholder?: string;
-  // For select types
   options?: string[];
-  // For multi-select: which option acts as "None of the Above"
   noneOption?: string;
 }
 
@@ -28,7 +25,7 @@ const configs: Record<string, ClientConfig> = {
   simple: simpleConfig as ClientConfig,
 };
 
-export function getClientConfig(): ClientConfig {
-  const clientId = process.env.NEXT_PUBLIC_CLIENT_ID || 'default';
+export function getClientConfig(overrideId?: string | null): ClientConfig {
+  const clientId = overrideId || process.env.NEXT_PUBLIC_CLIENT_ID || 'default';
   return configs[clientId] || configs.default;
 }

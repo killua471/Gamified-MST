@@ -1,10 +1,8 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { getClientConfig, Question } from "@/app/lib/clientConfig";
-
-const config = getClientConfig();
 
 const TEST_VERSION = new Map([
     ["omst", "OMST"],
@@ -35,8 +33,9 @@ function isWholeNumberInRange(value: string, min: number, max: number) {
     return Number.isInteger(parsed) && parsed >= min && parsed <= max;
 }
 
-function isAnswerValid(question: Question, answer: string | string[]): boolean {
+function isAnswerValid(question: Question, answer: string | string[] | undefined): boolean {
     if (!question.required) return true;
+    if (answer === undefined) return false;
     switch (question.type) {
         case "rating":
             return isWholeNumberInRange(
@@ -56,6 +55,9 @@ function isAnswerValid(question: Question, answer: string | string[]): boolean {
 export default function QuestionnairePage() {
     const router = useRouter();
     const searchParams = useSearchParams();
+    const clientParam = searchParams.get("client");
+    const config = useMemo(() => getClientConfig(clientParam), [clientParam]);
+
     const [testVersion, setTestVersion] = useState("");
     const testVersionTitle = TEST_VERSION.get(testVersion) || "";
 
@@ -64,13 +66,16 @@ export default function QuestionnairePage() {
     const [studyID, setStudyID] = useState("");
 
     // Dynamic answers state: keyed by question id
-    const [answers, setAnswers] = useState<Record<string, string | string[]>>(() => {
+    const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
+
+    // Reset/initialize answers whenever config questions change
+    useEffect(() => {
         const initial: Record<string, string | string[]> = {};
         for (const q of config.questions) {
             initial[q.id] = q.type === "multi-select" ? [] : "";
         }
-        return initial;
-    });
+        setAnswers(initial);
+    }, [config]);
 
     const canContinue = config.questions.every((q) =>
         isAnswerValid(q, answers[q.id]),
@@ -81,7 +86,7 @@ export default function QuestionnairePage() {
         setProlificPID(searchParams.get("PROLIFIC_PID") || "");
         setSessionID(searchParams.get("SESSION_ID") || "");
         setStudyID(searchParams.get("STUDY_ID") || "");
-    }, []);
+    }, [searchParams]);
 
     const setAnswer = (id: string, value: string | string[]) => {
         setAnswers((prev) => ({ ...prev, [id]: value }));
@@ -104,7 +109,6 @@ export default function QuestionnairePage() {
                 client_id: config.clientName,
             };
 
-            // Add all answers to payload
             for (const q of config.questions) {
                 payload[q.id] = answers[q.id];
             }
@@ -147,7 +151,6 @@ export default function QuestionnairePage() {
         window.location.href = prolificComplete;
     };
 
-    // Allow Enter key to continue when all required fields are filled
     const onEnterPress = useCallback(
         (e: KeyboardEvent) => {
             if (e.key === "Enter" && canContinue) {
@@ -185,7 +188,7 @@ export default function QuestionnairePage() {
 
         switch (question.type) {
             case "rating": {
-                const value = answer as string;
+                const value = (answer as string) || "";
                 const valid = isWholeNumberInRange(
                     value,
                     question.min ?? 0,
@@ -246,7 +249,7 @@ export default function QuestionnairePage() {
                 );
 
             case "multi-select": {
-                const selected = answer as string[];
+                const selected = (answer as string[]) || [];
                 return (
                     <div key={question.id} style={containerStyle}>
                         <label style={labelStyle}>{label}</label>
@@ -280,7 +283,6 @@ export default function QuestionnairePage() {
         }
     };
 
-    // Build validation summary
     const missingFields = config.questions
         .filter((q) => q.required && !isAnswerValid(q, answers[q.id]))
         .map((q) => {
@@ -322,7 +324,6 @@ export default function QuestionnairePage() {
 
                 {config.questions.map(renderQuestion)}
 
-                {/* Fixed footer button */}
                 <div
                     style={{
                         position: "fixed",
